@@ -1,0 +1,36 @@
+version: 2
+
+sources:
+  - name: raw
+    description: >
+      Raw landing zone (Phase 1). Every source is loaded exactly as it arrived -
+      no filtering, deduplication, typing or timezone conversion. All of that
+      happens in the staging and intermediate layers.
+    database: CITIBIKE_WEATHER
+    schema: RAW
+    tables:
+      - name: raw_citibike_lab
+        identifier: RAW_CITIBIKE_LAB
+        description: >
+          Historical Citi Bike trips from the Snowflake S3 lab bucket
+          (2013-06-01 to 2018-06-30). 376 gzipped CSV files, no header row,
+          16 columns, every column loaded as VARCHAR. 61,468,359 rows.
+          Natural key: (_source_file, _source_row) - the old schema has no ride_id.
+
+      - name: raw_weather_json
+        identifier: RAW_WEATHER_JSON
+        description: >
+          Official NYC weather feed (S3 JSON), one VARIANT per record.
+          57,894 rows. Contains two city IDs both named "New York" and
+          exact-copy duplicate timestamps - both deliberately kept here.
+          `time` is Unix epoch seconds (UTC). Temperature is in Kelvin.
+          There is no numerical rainfall field.
+
+      - name: raw_weather_openmeteo
+        identifier: RAW_WEATHER_OPENMETEO
+        description: >
+          Open-Meteo historical archive, ERA5 model, hourly, UTC (timezone=GMT).
+          One row per downloaded file; hourly values are parallel arrays under
+          v:hourly. Grid cell centred at 40.75, -74.00 (~25 km cell).
+          Covers 2016-07-04 to 2018-07-01 UTC = 17,472 hours.
+          Added to supply rainfall in mm, which the official feed lacks.

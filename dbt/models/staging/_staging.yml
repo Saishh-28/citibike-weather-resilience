@@ -1,0 +1,90 @@
+version: 2
+
+models:
+
+  - name: stg_citibike_lab
+    description: >
+      Historical trips, renamed and typed. One row per raw row (all years,
+      2013-2018). Filtering to the analysis window happens downstream.
+    config:
+      contract:
+        enforced: true     # if the source schema changes, the build fails loudly (plan §12-13)
+    columns:
+      - name: trip_id
+        data_type: varchar
+        description: md5 of (source_file, source_row). The old schema has no ride_id.
+        data_tests: [unique, not_null]
+      - name: source_file
+        data_type: varchar
+      - name: source_row
+        data_type: number
+      - name: started_at
+        data_type: timestamp_ntz
+        description: NYC local time.
+        data_tests: [not_null]
+      - name: ended_at
+        data_type: timestamp_ntz
+        description: NYC local time. Can be earlier than started_at on DST fall-back nights.
+        data_tests: [not_null]
+      - name: trip_duration_seconds
+        data_type: number
+        description: From the source column. Uncapped in this schema (max ~112 days).
+        data_tests: [not_null]
+      - name: start_station_id
+        data_type: varchar
+        description: Kept as text on purpose (see model header).
+      - name: start_station_name
+        data_type: varchar
+      - name: start_station_lat
+        data_type: float
+      - name: start_station_lon
+        data_type: float
+      - name: end_station_id
+        data_type: varchar
+      - name: end_station_name
+        data_type: varchar
+      - name: end_station_lat
+        data_type: float
+      - name: end_station_lon
+        data_type: float
+      - name: bike_id
+        data_type: number
+      - name: membership_type
+        data_type: varchar
+      - name: usertype
+        data_type: varchar
+        description: "'Subscriber' or 'Customer'. Mapped to member/casual downstream."
+      - name: birth_year
+        data_type: number
+      - name: gender_code
+        data_type: number
+      - name: loaded_at
+        data_type: timestamp_ltz
+
+  - name: stg_weather_json
+    description: >
+      Official weather feed, flattened, converted to NYC local time and Celsius,
+      exact-copy duplicates removed. Both city IDs still present.
+    columns:
+      - name: weather_observation_id
+        description: city_id + epoch seconds.
+        data_tests: [unique, not_null]
+      - name: city_id
+        data_tests: [not_null]
+      - name: observed_at_utc
+        data_tests: [not_null]
+      - name: observed_at_local
+        data_tests: [not_null]
+
+  - name: stg_weather_openmeteo
+    description: >
+      Open-Meteo hourly archive (ERA5), one row per UTC hour, converted to
+      NYC local time. Supplies rainfall in mm and snowfall in cm.
+    columns:
+      - name: observed_at_utc
+        description: Hour start in UTC. Unique (local time is not - 1am repeats on fall-back nights).
+        data_tests: [unique, not_null]
+      - name: precipitation_mm
+        data_tests: [not_null]
+      - name: temperature_c
+        data_tests: [not_null]

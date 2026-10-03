@@ -1,0 +1,50 @@
+name: 'citibike_weather'
+version: '1.0.0'
+config-version: 2
+
+# dbt Cloud ignores this; it is only used if the project is ever run with dbt Core locally.
+profile: 'citibike_weather'
+
+model-paths: ["models"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+analysis-paths: ["analyses"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# ---------------------------------------------------------------------------
+# Project-wide decisions, kept in ONE place so they are visible and reviewable.
+# Every value here comes from a Phase 0 finding.
+# ---------------------------------------------------------------------------
+vars:
+  # Analysis window = where trips and the official weather feed overlap (NYC local time).
+  overlap_start: '2016-07-05'
+  overlap_end: '2018-07-01'          # exclusive; last trip is 2018-06-30 23:59:54
+
+  # Official weather feed: two locations are both named "New York".
+  # 5128581 = Manhattan (40.71, -74.01). 5128638 = NY State centroid, ~300 km upstate.
+  nyc_city_id: 5128581
+
+  # Rides longer than this are flagged (likely lost / stolen / never docked).
+  # They still count as demand; they are excluded only from duration statistics.
+  extreme_duration_seconds: 86400
+
+  # Weather gaps up to this many hours are filled from the previous reading (and flagged).
+  # Longer gaps stay missing - never converted to "dry".
+  weather_fill_cap_hours: 3
+
+models:
+  citibike_weather:
+    staging:
+      # Staging = one clean, typed copy of each source. Views cost nothing to store.
+      +materialized: view
+      +schema: staging
+    intermediate:
+      +materialized: table
+      +schema: intermediate
+    marts:
+      +materialized: table
+      +schema: marts
