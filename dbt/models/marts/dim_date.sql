@@ -1,7 +1,7 @@
 -- dim_date
 -- One row per New York calendar date in the analysis window (726 rows).
 -- Power BI needs a dedicated date table ("Mark as date table") for date hierarchies
--- and period comparisons. It also carries the holiday flag (assumption A8): without it,
+-- and period comparisons. It also carries the holiday flag (assumption A7): without it,
 -- Thanksgiving or Christmas would look like an unexplained weather anomaly.
 --
 -- Holidays: US federal holidays from seeds/us_federal_holidays.csv, including the

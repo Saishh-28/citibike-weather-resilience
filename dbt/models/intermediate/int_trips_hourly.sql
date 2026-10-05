@@ -1,9 +1,9 @@
 -- int_trips_hourly
 -- One row per UTC hour that had at least one trip: how many trips STARTED in that hour.
--- Written by Saisha, 5 Oct 2026.
+-- Core query written by Saisha, 5 Oct 2026 (reviewed with AI); rider-type columns added afterwards by AI.
 --
 -- Decisions:
---   * Demand = trips STARTED (A7). The rider decides at the start, under the weather at
+--   * Demand = trips STARTED (assumption A6). The rider decides at the start, under the weather at
 --     that moment, so start time is what we compare to weather.
 --   * Hours are counted in UTC, not New York time. UTC has no missing hour in March and
 --     no doubled hour in November, so every hour appears once (friend's review, 5 Oct).

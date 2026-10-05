@@ -41,6 +41,13 @@ vars:
   # so any value from 2 to 15 gives the same result.
   closure_min_hours: 10
 
+  # Day classification for the brief's question ("a rainy or snowy day vs a clear, sunny day").
+  # Decided by Saisha, 6 Oct. Snow beats rain: a day with both counts as snowy.
+  # 1 mm = the standard meteorological "wet day"; 1 cm = snow that actually settles.
+  # "Dry" = no measurable precipitation at all (0.0 mm); it stands in for "sunny".
+  rainy_day_min_mm: 1
+  snowy_day_min_cm: 1
+
 models:
   citibike_weather:
     staging:
