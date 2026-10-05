@@ -14,6 +14,19 @@ models:
       - name: trip_count
         description: Trips started in this hour. 0 = counted, nobody rode.
         data_tests: [not_null]
+      - name: member_trip_count
+        description: Trips by annual members (usertype = Subscriber).
+        data_tests: [not_null]
+      - name: casual_trip_count
+        description: Trips by casual riders (usertype = Customer).
+        data_tests: [not_null]
+      - name: date_local
+        description: New York calendar date. Joins to dim_date.date_day in Power BI.
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_day
       - name: is_system_closed
         description: True inside a run of closure_min_hours+ consecutive zero-trip hours (snowstorm shutdowns).
         data_tests: [not_null]
@@ -22,4 +35,15 @@ models:
         data_tests: [not_null]
       - name: official_status
         description: observed / filled / missing for the official-feed columns.
+        data_tests: [not_null]
+
+  - name: dim_date
+    description: >
+      One row per New York calendar date in the window (726). Calendar attributes, season,
+      and the US federal holiday flag. Mark as the date table in Power BI.
+    columns:
+      - name: date_day
+        description: The date. Primary key.
+        data_tests: [unique, not_null]
+      - name: is_holiday
         data_tests: [not_null]

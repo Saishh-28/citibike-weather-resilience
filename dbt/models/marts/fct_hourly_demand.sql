@@ -33,6 +33,9 @@ joined as (
     select
         s.hour_utc,
         coalesce(t.trip_count, 0)                                        as trip_count,
+        coalesce(t.member_trip_count, 0)                                 as member_trip_count,
+        coalesce(t.casual_trip_count, 0)                                 as casual_trip_count,
+        coalesce(t.unknown_rider_trip_count, 0)                          as unknown_rider_trip_count,
 
         w.temperature_c,
         w.humidity_pct,
@@ -85,6 +88,9 @@ select
                                                                          as is_weekend,
 
     trip_count,
+    member_trip_count,
+    casual_trip_count,
+    unknown_rider_trip_count,
     (trip_count = 0 and zero_run_hours >= {{ var('closure_min_hours') }}) as is_system_closed,
 
     temperature_c,

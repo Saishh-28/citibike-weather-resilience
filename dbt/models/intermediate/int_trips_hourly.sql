@@ -19,7 +19,12 @@
 
 select
     date_trunc('hour', convert_timezone('America/New_York', 'UTC', started_at)) as trip_hour_utc,
-    count(*)                                                                     as trip_count
+    count(*)                                                                     as trip_count,
+    -- Rider type: Subscriber = annual member (mostly commuters), Customer = casual (day pass).
+    -- Anything else is counted as unknown, never guessed.
+    count_if(usertype = 'Subscriber')                                            as member_trip_count,
+    count_if(usertype = 'Customer')                                              as casual_trip_count,
+    count_if(usertype is null or usertype not in ('Subscriber', 'Customer'))     as unknown_rider_trip_count
 from {{ ref('stg_citibike_lab') }}
 where started_at >= '{{ var("overlap_start") }}'
   and started_at <  '{{ var("overlap_end") }}'

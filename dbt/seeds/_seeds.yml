@@ -1,0 +1,17 @@
+version: 2
+
+seeds:
+
+  - name: us_federal_holidays
+    description: >
+      US federal holidays inside the analysis window (2016-07-05 to 2018-06-30), including the
+      observed weekday when a holiday falls on a weekend. Generated from the federal rules
+      (fixed dates + "nth Monday" rules) and checked by hand.
+    config:
+      column_types:
+        holiday_date: date
+        holiday_name: varchar
+        is_observed_day: boolean
+    columns:
+      - name: holiday_date
+        data_tests: [unique, not_null]
