@@ -84,3 +84,14 @@ models:
         data_tests: [not_null]
       - name: daypart
         data_tests: [not_null]
+
+  - name: fct_hourly_anomalies
+    description: >
+      One row per UTC hour (17,424). Weather-adjusted expectation = expected trips x (1 + typical
+      rain effect for the hour's rain band and daypart). is_anomaly = at least 40% away from it with
+      at least 300 trips expected. known_reason: Snowstorm closure / Public holiday / Unexplained.
+    columns:
+      - name: hour_utc
+        data_tests: [unique, not_null]
+      - name: is_anomaly
+        data_tests: [not_null]

@@ -5,13 +5,8 @@
 -- Built from fct_hourly_expected_demand, comparable hours only
 -- (normal days, system open, expectation available).
 --
--- Rain bands use precipitation in THAT hour (Open-Meteo, mm). Hours with any snowfall are
--- kept apart in their own 'Snow' band, so snow does not blur the rain curve.
---
--- Dayparts (New York time):
---   Weekday commute = Mon-Fri 07:00-09:59 and 16:00-18:59  (the peaks)
---   Weekday other   = all other weekday hours
---   Weekend         = Sat and Sun
+-- Rain bands (precipitation in THAT hour; snow hours apart) and dayparts (weekday commute
+-- 07:00-09:59 and 16:00-18:59 / weekday other / weekend) come from fct_hourly_expected_demand.
 --
 -- % vs expected is WEIGHTED: sum(actual) / sum(expected) - 1.
 -- Example: a 5pm hour expected 4,000 trips and a 3am hour expected 40. A simple average of
@@ -21,34 +16,8 @@
 
 with hours as (
 
-    select
-        *,
-        case
-            when snowfall_cm > 0          then 'Snow'
-            when precipitation_mm = 0     then '0 mm (dry)'
-            when precipitation_mm < 0.1   then '0-0.1 mm'
-            when precipitation_mm < 0.5   then '0.1-0.5 mm'
-            when precipitation_mm < 1     then '0.5-1 mm'
-            when precipitation_mm < 2     then '1-2 mm'
-            when precipitation_mm < 4     then '2-4 mm'
-            else '4+ mm'
-        end                                                     as rain_band,
-        case
-            when snowfall_cm > 0          then 8
-            when precipitation_mm = 0     then 1
-            when precipitation_mm < 0.1   then 2
-            when precipitation_mm < 0.5   then 3
-            when precipitation_mm < 1     then 4
-            when precipitation_mm < 2     then 5
-            when precipitation_mm < 4     then 6
-            else 7
-        end                                                     as band_order,
-        case
-            when is_weekend                                   then 'Weekend'
-            when hour_of_day_local between 7 and 9
-              or hour_of_day_local between 16 and 18          then 'Weekday commute'
-            else 'Weekday other'
-        end                                                     as daypart
+    -- rain_band, band_order and daypart are defined once, in fct_hourly_expected_demand.
+    select *
     from {{ ref('fct_hourly_expected_demand') }}
     where is_comparable_hour
 

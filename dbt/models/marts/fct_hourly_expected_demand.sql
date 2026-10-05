@@ -111,6 +111,32 @@ combined as (
 
 select
     *,
+    -- Rain band of THIS hour (Open-Meteo precipitation; any snowfall = 'Snow').
+    case
+        when snowfall_cm > 0          then 'Snow'
+        when precipitation_mm = 0     then '0 mm (dry)'
+        when precipitation_mm < 0.5   then '0.1-0.5 mm'     -- Open-Meteo steps are 0.1 mm
+        when precipitation_mm < 1     then '0.5-1 mm'
+        when precipitation_mm < 2     then '1-2 mm'
+        when precipitation_mm < 4     then '2-4 mm'
+        else '4+ mm'
+    end                                                           as rain_band,
+    case
+        when snowfall_cm > 0          then 7
+        when precipitation_mm = 0     then 1
+        when precipitation_mm < 0.5   then 2
+        when precipitation_mm < 1     then 3
+        when precipitation_mm < 2     then 4
+        when precipitation_mm < 4     then 5
+        else 6
+    end                                                           as band_order,
+    -- Daypart (New York time): weekday peaks 07:00-09:59 and 16:00-18:59.
+    case
+        when is_weekend                                   then 'Weekend'
+        when hour_of_day_local between 7 and 9
+          or hour_of_day_local between 16 and 18          then 'Weekday commute'
+        else 'Weekday other'
+    end                                                           as daypart,
     trip_count - expected_trips                                   as residual_trips,
     trip_count / nullif(expected_trips, 0) - 1                    as deviation_pct,
     -- Hours used in the weather analysis: a normal day, system open, expectation available.
