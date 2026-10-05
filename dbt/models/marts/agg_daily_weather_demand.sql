@@ -80,6 +80,8 @@ dry_baseline as (
         is_weekend,
         avg(trips)          as dry_day_avg_trips,
         avg(casual_share)   as dry_day_avg_casual_share,
+        avg(member_trips)   as dry_day_avg_member_trips,
+        avg(casual_trips)   as dry_day_avg_casual_trips,
         count(*)            as dry_days_in_baseline
     from classified
     where day_type = 'Dry'
@@ -93,7 +95,11 @@ select
     b.dry_day_avg_trips,
     b.dry_day_avg_casual_share,
     b.dry_days_in_baseline,
-    c.trips / nullif(b.dry_day_avg_trips, 0) - 1               as pct_vs_dry_days_same_month
+    c.trips / nullif(b.dry_day_avg_trips, 0) - 1               as pct_vs_dry_days_same_month,
+    -- Each rider group against ITS OWN dry-day level in the same month:
+    -- "did members drop by less than casual riders?"
+    c.member_trips / nullif(b.dry_day_avg_member_trips, 0) - 1 as member_pct_vs_dry_days_same_month,
+    c.casual_trips / nullif(b.dry_day_avg_casual_trips, 0) - 1 as casual_pct_vs_dry_days_same_month
 from classified c
 left join dry_baseline b
     on  b.year       = c.year
