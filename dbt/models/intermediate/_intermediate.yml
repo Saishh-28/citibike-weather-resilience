@@ -1,0 +1,15 @@
+version: 2
+
+models:
+
+  - name: int_trips_hourly
+    description: >
+      Trips started per UTC hour, inside the overlap window. One row per hour that had
+      at least one trip. Hours with zero trips are added later by the hourly spine.
+    columns:
+      - name: trip_hour_utc
+        description: Start of the hour, in UTC. The grain of this table.
+        data_tests: [unique, not_null]
+      - name: trip_count
+        description: Number of trips that started in this hour.
+        data_tests: [not_null]
