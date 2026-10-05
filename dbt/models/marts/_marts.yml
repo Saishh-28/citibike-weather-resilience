@@ -61,3 +61,15 @@ models:
         data_tests: [not_null]
       - name: trips
         data_tests: [not_null]
+
+  - name: fct_hourly_expected_demand
+    description: >
+      One row per UTC hour (17,424): actual trips, expected (normal) trips = level x shape,
+      the residual and % deviation. Level = median of the previous 8 same weekdays;
+      shape = average hourly share on comparable dry days by season x weekday x hour.
+      is_comparable_hour marks the hours used in the weather analysis.
+    columns:
+      - name: hour_utc
+        data_tests: [unique, not_null]
+      - name: is_comparable_hour
+        data_tests: [not_null]
