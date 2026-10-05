@@ -73,3 +73,14 @@ models:
         data_tests: [unique, not_null]
       - name: is_comparable_hour
         data_tests: [not_null]
+
+  - name: agg_rain_response
+    description: >
+      The rain curve. One row per rain band (hourly precipitation, Open-Meteo; snow hours
+      separate) x daypart (Weekday commute / Weekday other / Weekend / All), comparable hours only.
+      pct_vs_expected is weighted (sum actual / sum expected - 1); trips_lost = expected - actual.
+    columns:
+      - name: rain_band
+        data_tests: [not_null]
+      - name: daypart
+        data_tests: [not_null]
