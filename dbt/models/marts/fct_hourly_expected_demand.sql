@@ -4,25 +4,29 @@
 --
 -- "Normal" (expected) demand = LEVEL x SHAPE        (idea from the friend's review, 5 Oct)
 --
---   LEVEL = how busy this kind of day has been lately:
---           the MEDIAN daily total of the last 8 same weekdays (e.g. the 8 previous Tuesdays),
---           comparable days only (no closures, no holidays).
+--   LEVEL = how busy this kind of day normally is around this date, WITHOUT rain:
+--           the MEDIAN daily total of the same weekday from 4 weeks before to 4 weeks after
+--           (e.g. for Tuesday 18 April: the Tuesdays from ~21 March to ~16 May),
+--           using only comparable Dry or Light (drizzle) days, and never the day itself.
 --           * Same weekday, so Tuesdays are compared with Tuesdays.
---           * Last 8 weeks, so it follows the seasons AND Citi Bike's growth automatically.
---           * Median, not mean, so one or two rainy Tuesdays barely move it.
+--           * Centred window, so it follows the seasons and Citi Bike's growth WITHOUT lagging
+--             behind (decision B, Saisha 6 Oct; the first version used the previous 8 weeks and
+--             sat ~6% too low on dry days).
+--           * Rain-free days only, so "normal" means "normal without rain".
+--           * Uses future weeks: right for EXPLAINING the past, not for FORECASTING. A forecast
+--             (Phase 5) must use past days only.
 --
 --   SHAPE = how a normal DRY day of that kind spreads its trips over 24 hours:
 --           the average share of the day's trips falling in each hour,
 --           by season x weekday x hour, from comparable dry days only.
 --           e.g. on a dry summer Tuesday about 9% of the day's trips start at 5pm.
 --
---   expected trips at 5pm next Tuesday = (median of the last 8 Tuesdays) x (5pm share)
+--   expected trips at 5pm on a Tuesday = (median of the rain-free Tuesdays around it) x (5pm share)
 --
 -- Limitations (declared):
---   * Burn-in: the first weeks have too few previous same weekdays. Expected is only computed
---     when at least 4 are available, so roughly the first 4 weeks (July 2016) have none.
---   * A long wet spell can pull the level down a little, which slightly UNDERSTATES rain.
+--   * Expected is only computed when at least 3 rain-free same weekdays are available nearby.
 --   * Clock-change days (23 or 25 hours) use the normal 24-hour shape.
+--   * Hours next to a closure are not flagged and may look unusually low.
 
 with hourly as (
 
@@ -47,7 +51,8 @@ daily as (
 
 level as (
 
-    -- For each date: median daily trips of the previous 8 same weekdays (comparable only).
+    -- For each date: median daily trips of the same weekday within +/- 4 weeks,
+    -- rain-free comparable days only, excluding the day itself.
     select
         d.date_local,
         median(p.day_trips)      as level_trips,
@@ -55,9 +60,10 @@ level as (
     from daily d
     left join daily p
         on  p.day_of_week = d.day_of_week
-        and p.date_local <  d.date_local
-        and p.date_local >= dateadd('day', -56, d.date_local)
+        and p.date_local <> d.date_local
+        and p.date_local between dateadd('day', -28, d.date_local) and dateadd('day', 28, d.date_local)
         and p.is_comparable_day
+        and p.day_type in ('Dry', 'Light')
     group by 1
 
 ),
@@ -90,7 +96,7 @@ combined as (
         l.level_trips,
         l.level_days_used,
         s.hour_share,
-        iff(l.level_days_used >= 4, l.level_trips * s.hour_share, null)  as expected_trips
+        iff(l.level_days_used >= 3, l.level_trips * s.hour_share, null)  as expected_trips
     from hourly h
     join daily d
         on d.date_local = h.date_local
