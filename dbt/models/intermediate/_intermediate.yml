@@ -13,3 +13,22 @@ models:
       - name: trip_count
         description: Number of trips that started in this hour.
         data_tests: [not_null]
+
+  - name: int_weather_hourly
+    description: >
+      One row per UTC hour in the analysis window (17,424). Open-Meteo is complete;
+      official-feed fields are observed, filled for gaps up to weather_fill_cap_hours,
+      or null (never treated as dry).
+    columns:
+      - name: weather_hour_utc
+        description: Start of the hour, in UTC. The grain of this table.
+        data_tests: [unique, not_null]
+      - name: precipitation_mm
+        description: Open-Meteo precipitation that fell DURING this hour (read from the next row).
+        data_tests: [not_null]
+      - name: temperature_c
+        description: Open-Meteo temperature at the start of the hour.
+        data_tests: [not_null]
+      - name: official_status
+        description: observed / filled / missing - how the official-feed fields were obtained.
+        data_tests: [not_null]

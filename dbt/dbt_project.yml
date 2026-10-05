@@ -36,6 +36,11 @@ vars:
   # Longer gaps stay missing - never converted to "dry".
   weather_fill_cap_hours: 3
 
+  # Runs of at least this many consecutive zero-trip hours = system closed (three snowstorms:
+  # Feb 2017, Mar 2017 Stella, Mar 2018). Gaps in int_trips_hourly are either 1 hour or 16+,
+  # so any value from 2 to 15 gives the same result.
+  closure_min_hours: 10
+
 models:
   citibike_weather:
     staging:
