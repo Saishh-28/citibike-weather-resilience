@@ -67,7 +67,11 @@ joined as (
         last_value(w.weather_hour_utc) ignore nulls over (
             order by o.weather_hour_utc
             rows between unbounded preceding and current row
-        )                                                                      as last_official_hour_utc
+        )                                                                      as last_official_hour_utc,
+        first_value(w.weather_hour_utc) ignore nulls over (
+            order by o.weather_hour_utc
+            rows between current row and unbounded following
+        )                                                                      as next_official_hour_utc
     from openmeteo o
     left join official_hourly w
         on w.weather_hour_utc = o.weather_hour_utc
@@ -76,16 +80,32 @@ joined as (
 
 filled as (
 
-    -- Step 3b: use that last reading only if it is recent enough.
+    -- Step 3b: decision D5. Fill a gap only if the WHOLE gap is short (<= cap hours).
+    -- A long gap stays missing from its first hour: we do not know when the weather changed.
     select
         j.*,
         datediff('hour', j.last_official_hour_utc, j.weather_hour_utc)         as hours_since_official,
+        datediff('hour', j.last_official_hour_utc, j.next_official_hour_utc) - 1
+                                                                               as gap_length_hours,
         w.condition_main,
         w.condition_description,
-        w.temperature_c                                                        as official_temperature_c
+        w.temperature_c                                                        as official_temperature_c_raw
     from joined j
     left join official_hourly w
         on w.weather_hour_utc = j.last_official_hour_utc
+
+),
+
+labelled as (
+
+    select
+        filled.*,
+        case
+            when hours_since_official = 0                                    then 'observed'
+            when gap_length_hours <= {{ var('weather_fill_cap_hours') }}     then 'filled'
+            else 'missing'
+        end                                                                    as official_status
+    from filled
 
 )
 
@@ -102,14 +122,10 @@ select
     snowfall_cm,
     wmo_weather_code,
 
-    -- Official feed (observed, filled up to the cap, otherwise null)
-    case when hours_since_official <= {{ var('weather_fill_cap_hours') }} then condition_main end          as official_condition,
-    case when hours_since_official <= {{ var('weather_fill_cap_hours') }} then condition_description end   as official_condition_description,
-    case when hours_since_official <= {{ var('weather_fill_cap_hours') }} then official_temperature_c end  as official_temperature_c,
-    case
-        when hours_since_official = 0                                    then 'observed'
-        when hours_since_official <= {{ var('weather_fill_cap_hours') }} then 'filled'
-        else 'missing'
-    end                                                                        as official_status
+    -- Official feed (observed, filled for short gaps, otherwise null - never "dry")
+    case when official_status <> 'missing' then condition_main end          as official_condition,
+    case when official_status <> 'missing' then condition_description end   as official_condition_description,
+    case when official_status <> 'missing' then official_temperature_c_raw end  as official_temperature_c,
+    official_status
 
-from filled
+from labelled
