@@ -4,7 +4,13 @@
 -- Design (decided 10 Oct):
 --   * Daily grain: one number per day (agg_daily_weather_demand, 726 days).
 --   * Time-based split, PAST DATA ONLY for training:
---       train = 2016-07-05 .. 2017-12-31 (545 days)   test = 2018-01-01 .. 2018-06-30 (181 days)
+--       train = 2016-07-05 .. 2018-04-30 (665 days)   test = 2018-05-01 .. 2018-06-30 (61 days)
+--   * FIRST ATTEMPT (10 Oct) trained to 2017-12-31 and forecast all of 2018 H1 (181 days): both models
+--     failed (calendar MAPE 57.7%, weather 78.2%; calendar predicted a flat ~25k/day while June was 65k).
+--     Cause: 18 months of history = one winter-to-summer cycle, so seasonality was never learned, and a
+--     6-month horizon is unrealistic. Fixed by training to end of April 2018 (May-June 2017 seen once).
+--   * RESULT (10 Oct): 61 test days. MAE calendar 15,253 vs weather 9,134; MAPE 26.8% vs 16.2%;
+--     weather cut the average error by 40.1%. Saisha predicted 10-30%.
 --     (Unlike the explanatory baseline, nothing here looks at future weeks.)
 --   * Two models, identical except for weather:
 --       A  "calendar"  : date + is_holiday + is_weekend
@@ -43,28 +49,28 @@ select
     closed_hours
 from CITIBIKE_WEATHER.DBT_SAISHA_MARTS.AGG_DAILY_WEATHER_DEMAND;
 
--- Check: 726 rows, 545 train, 181 test
+-- Check: 726 rows, 665 train, 61 test
 select count(*) as all_days,
-       count_if(ds <  '2018-01-01') as train_days,
-       count_if(ds >= '2018-01-01') as test_days
+       count_if(ds <  '2018-05-01') as train_days,
+       count_if(ds >= '2018-05-01') as test_days
 from daily_input;
 
 create or replace view train_calendar as
 select ds, trips, is_holiday, is_weekend
-from daily_input where ds < '2018-01-01';
+from daily_input where ds < '2018-05-01';
 
 create or replace view train_weather as
 select ds, trips, is_holiday, is_weekend, precipitation_mm, snowfall_cm, avg_temperature_c
-from daily_input where ds < '2018-01-01';
+from daily_input where ds < '2018-05-01';
 
 -- Test inputs: the features only (no trips — that is what we predict)
 create or replace view test_calendar as
 select ds, is_holiday, is_weekend
-from daily_input where ds >= '2018-01-01';
+from daily_input where ds >= '2018-05-01';
 
 create or replace view test_weather as
 select ds, is_holiday, is_weekend, precipitation_mm, snowfall_cm, avg_temperature_c
-from daily_input where ds >= '2018-01-01';
+from daily_input where ds >= '2018-05-01';
 
 -- =========================================================================
 -- STEP 2 — Train the two models (each takes about a minute)
@@ -98,7 +104,7 @@ call model_weather!forecast(
 create or replace table forecast_weather as
 select * from table(result_scan(last_query_id()));
 
--- Check: 181 rows each
+-- Check: 61 rows each
 select (select count(*) from forecast_calendar) as calendar_rows,
        (select count(*) from forecast_weather)  as weather_rows;
 

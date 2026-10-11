@@ -6,11 +6,19 @@ models:
     description: >
       One row per UTC hour in the analysis window (17,424). Trips started, weather from
       Open-Meteo and the official feed, New York calendar columns, and the snowstorm
-      closure flag. The table Power BI reads.
+      closure flag. The base table for every weather analysis.
     columns:
       - name: hour_utc
         description: Start of the hour, in UTC. The grain of this table.
         data_tests: [unique, not_null]
+      - name: hour_local
+        description: The same hour in New York time (for display and the normal-demand baseline).
+      - name: hour_of_day_local
+        description: Hour of the day in New York time, 0-23.
+      - name: day_of_week_local
+        description: ISO weekday in New York time, 1 = Monday ... 7 = Sunday.
+      - name: is_weekend
+        description: True on Saturday and Sunday (New York time).
       - name: trip_count
         description: Trips started in this hour. 0 = counted, nobody rode.
         data_tests: [not_null]
@@ -20,6 +28,8 @@ models:
       - name: casual_trip_count
         description: Trips by casual riders (usertype = Customer).
         data_tests: [not_null]
+      - name: unknown_rider_trip_count
+        description: Trips with any other usertype (0.16% of trips). Never guessed into a group.
       - name: date_local
         description: New York calendar date. Joins to dim_date.date_day in Power BI.
         data_tests:
@@ -30,9 +40,19 @@ models:
       - name: is_system_closed
         description: True inside a run of closure_min_hours+ consecutive zero-trip hours (snowstorm shutdowns).
         data_tests: [not_null]
+      - name: temperature_c
+        description: Open-Meteo temperature at the start of the hour, degrees Celsius.
       - name: precipitation_mm
-        description: Open-Meteo precipitation that fell during this hour.
+        description: Open-Meteo precipitation (rain + melted snow) that fell during this hour, mm.
         data_tests: [not_null]
+      - name: rain_mm
+        description: Open-Meteo rain only during this hour, mm.
+      - name: snowfall_cm
+        description: Open-Meteo snowfall during this hour, cm.
+      - name: wind_speed_kmh
+        description: Open-Meteo wind speed, km/h.
+      - name: official_condition
+        description: Official feed condition label (e.g. Rain, Snow, Clear). Blank when missing.
       - name: official_status
         description: observed / filled / missing for the official-feed columns.
         data_tests: [not_null]
@@ -40,13 +60,22 @@ models:
   - name: dim_date
     description: >
       One row per New York calendar date in the window (726). Calendar attributes, season,
-      and the US federal holiday flag. Mark as the date table in Power BI.
+      and the US federal holiday flag. Marked as the date table in Power BI.
     columns:
       - name: date_day
         description: The date. Primary key.
         data_tests: [unique, not_null]
+      - name: season
+        description: Meteorological season (Winter = Dec-Feb, Spring = Mar-May, Summer = Jun-Aug, Autumn = Sep-Nov).
+      - name: is_weekend
+        description: True on Saturday and Sunday.
       - name: is_holiday
+        description: True on a US federal holiday or its observed weekday (from the us_federal_holidays seed).
         data_tests: [not_null]
+      - name: holiday_name
+        description: Name of the holiday, blank otherwise.
+      - name: is_working_day
+        description: Weekday that is not a holiday.
 
   - name: agg_daily_weather_demand
     description: >
@@ -56,22 +85,53 @@ models:
       as not comparable. Answers the brief's rainy/snowy vs clear-day question.
     columns:
       - name: date_local
+        description: New York calendar date. Primary key.
         data_tests: [unique, not_null]
       - name: day_type
+        description: >
+          Snowy (>= snowy_day_min_cm of snow; snow beats rain), Rainy (>= rainy_day_min_mm of rain),
+          Dry (0.0 mm all day - stands in for "clear, sunny"), Light (anything in between).
         data_tests: [not_null]
       - name: trips
+        description: Trips started on this date.
         data_tests: [not_null]
+      - name: is_comparable_day
+        description: False on days with any closure hour or a federal holiday; those are left out of comparisons.
+      - name: pct_vs_dry_days_same_month
+        description: >
+          The fair comparison: trips / average trips on comparable dry days of the same year-month
+          and weekday/weekend group, minus 1. Example: -0.18 = 18% below a normal dry day.
+      - name: member_pct_vs_dry_days_same_month
+        description: The same comparison for members only, against members' own dry-day level.
+      - name: casual_pct_vs_dry_days_same_month
+        description: The same comparison for casual riders only, against their own dry-day level.
+      - name: casual_share
+        description: Casual trips / all trips on this date.
 
   - name: fct_hourly_expected_demand
     description: >
       One row per UTC hour (17,424): actual trips, expected (normal) trips = level x shape,
       the residual and % deviation. Level = median of rain-free same weekdays within +/- 4 weeks;
       shape = average hourly share on comparable dry days by season x weekday x hour.
-      is_comparable_hour marks the hours used in the weather analysis.
+      Explains the past; not a forecast (the level uses future weeks).
     columns:
       - name: hour_utc
+        description: Start of the hour, in UTC. Primary key.
         data_tests: [unique, not_null]
+      - name: expected_trips
+        description: Normal trips for this hour without rain (null when fewer than 3 rain-free reference days).
+      - name: residual_trips
+        description: trip_count - expected_trips.
+      - name: deviation_pct
+        description: trip_count / expected_trips - 1.
+      - name: rain_band
+        description: Precipitation in this hour - 0 mm (dry), 0.1-0.5, 0.5-1, 1-2, 2-4, 4+ mm, or Snow. Defined here once.
+      - name: band_order
+        description: Sort order for rain_band (1 = dry ... 7 = Snow).
+      - name: daypart
+        description: Weekday commute (07:00-09:59 and 16:00-18:59 NY time), Weekday other, or Weekend.
       - name: is_comparable_hour
+        description: Normal day, system open and expectation available - the hours used in the weather analysis.
         data_tests: [not_null]
 
   - name: agg_rain_response
@@ -81,9 +141,17 @@ models:
       pct_vs_expected is weighted (sum actual / sum expected - 1); trips_lost = expected - actual.
     columns:
       - name: rain_band
+        description: See fct_hourly_expected_demand.rain_band.
         data_tests: [not_null]
       - name: daypart
+        description: Weekday commute / Weekday other / Weekend, plus All for every hour together.
         data_tests: [not_null]
+      - name: hours
+        description: Comparable hours behind this row. Treat rows under ~30 hours with care.
+      - name: pct_vs_expected
+        description: Weighted % vs normal - a busy 5 pm hour counts more than a quiet 3 am hour.
+      - name: trips_lost_per_hour
+        description: Average trips lost per hour in this band (expected - actual) / hours.
 
   - name: fct_hourly_anomalies
     description: >
@@ -92,6 +160,14 @@ models:
       at least 300 trips expected. known_reason: Snowstorm closure / Public holiday / Unexplained.
     columns:
       - name: hour_utc
+        description: Start of the hour, in UTC. Primary key.
         data_tests: [unique, not_null]
+      - name: weather_adjusted_expected_trips
+        description: Normal trips for this hour, adjusted for the rain that fell.
+      - name: unexplained_trips
+        description: trip_count - weather_adjusted_expected_trips. Summed per day on the dashboard.
       - name: is_anomaly
+        description: At least 40% off the weather-adjusted expectation, with at least 300 trips expected.
         data_tests: [not_null]
+      - name: known_reason
+        description: Labels attached after ranking - Snowstorm closure, Public holiday, or Unexplained (never a claimed cause).
