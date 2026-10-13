@@ -1,12 +1,12 @@
 -- int_trips_hourly
 -- One row per UTC hour that had at least one trip: how many trips STARTED in that hour.
--- Core query written by Saisha, 5 Oct 2026 (reviewed with AI); rider-type columns added afterwards by AI.
+-- Core query written by Saisha (reviewed with AI); rider-type columns added with AI assistance.
 --
 -- Decisions:
 --   * Demand = trips STARTED (assumption A6). The rider decides at the start, under the weather at
 --     that moment, so start time is what we compare to weather.
 --   * Hours are counted in UTC, not New York time. UTC has no missing hour in March and
---     no doubled hour in November, so every hour appears once (friend's review, 5 Oct).
+--     no doubled hour in November, so every hour appears once.
 --   * The window filter uses started_at (New York time) because the overlap dates in
 --     dbt_project.yml are New York calendar dates.
 --
@@ -15,7 +15,7 @@
 --     happened twice, and the raw data does not say which one. Snowflake puts them in
 --     one of the two UTC hours. About one hour a year; too small to change any result.
 --
--- Hours with zero trips do NOT appear here. The hourly spine (built later) fixes that.
+-- Hours with zero trips do NOT appear here; the hourly spine in fct_hourly_demand adds them.
 
 select
     date_trunc('hour', convert_timezone('America/New_York', 'UTC', started_at)) as trip_hour_utc,

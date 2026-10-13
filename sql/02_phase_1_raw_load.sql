@@ -4,20 +4,14 @@
 -- Snowflake / AWS S3 / Open-Meteo
 -- ============================================================================
 -- Purpose:
---   Copy every source into Snowflake EXACTLY as it arrives. No filtering,
+--   Copy every source into Snowflake exactly as it arrives. No filtering,
 --   no deduplication, no type conversion, no timezone conversion.
 --   All Phase 0 decisions (NYC-only city, dedup, UTC -> New York,
---   extreme-duration flags, 3h gap fill) are applied later in dbt.
+--   extreme-duration flags, short-gap fill) are applied later in dbt.
 --
 -- Why load everything unchanged:
---   If a transformation decision turns out to be wrong, we fix one dbt model
---   and re-run. We never have to go back to the source and re-extract.
---
--- Done when:
---   Every raw table exists and its row count reconciles with Phase 0.
---
--- Run order: top to bottom. STEP 2 is a decision gate - read its result
--- before running STEP 3.
+--   If a transformation decision turns out to be wrong, one dbt model is
+--   fixed and re-run. The source never has to be re-extracted.
 --
 -- Author: Saisha
 -- ============================================================================
@@ -26,9 +20,9 @@
 -- ----------------------------------------------------------------------------
 -- STEP 0: CONTEXT & COST CONTROLS
 -- ----------------------------------------------------------------------------
--- AUTO_SUSPEND = 60: a warehouse left running while you think is the main way
--- trial credits disappear (plan §15). We size up only for the one-off trip
--- load in STEP 5 and size back down straight after.
+-- AUTO_SUSPEND = 60: an idle warehouse stops after one minute, so no credits
+-- are spent while nothing is running. The warehouse is sized up only for the
+-- one-off trip load (STEP 4) and sized back down straight after.
 -- ----------------------------------------------------------------------------
 
 USE WAREHOUSE CITIBIKE_WH;
@@ -53,7 +47,7 @@ CREATE OR REPLACE FILE FORMAT FF_TRIPS_CSV
     COMPRESSION = 'AUTO'
     FIELD_DELIMITER = ','
     RECORD_DELIMITER = '\n'
-    SKIP_HEADER = 0                     -- CONFIRMED in STEP 2: files have NO header row
+    SKIP_HEADER = 0                     -- files have NO header row (see STEP 2)
     FIELD_OPTIONALLY_ENCLOSED_BY = '"'
     NULL_IF = ('')
     EMPTY_FIELD_AS_NULL = TRUE;
@@ -61,7 +55,7 @@ CREATE OR REPLACE FILE FORMAT FF_TRIPS_CSV
 CREATE OR REPLACE FILE FORMAT FF_WEATHER_JSON
     TYPE = 'JSON'
     COMPRESSION = 'AUTO'
-    STRIP_OUTER_ARRAY = TRUE;           -- same setting Phase 0 counted 57,894 with
+    STRIP_OUTER_ARRAY = TRUE;           -- same setting Phase 0 counted 57,894 rows with
 
 CREATE OR REPLACE FILE FORMAT FF_OPENMETEO_JSON
     TYPE = 'JSON'
@@ -70,27 +64,16 @@ CREATE OR REPLACE FILE FORMAT FF_OPENMETEO_JSON
 
 
 -- ----------------------------------------------------------------------------
--- STEP 2: DECISION GATE - TRIP FILE LAYOUT
+-- STEP 2: TRIP FILE LAYOUT CHECK
 -- ----------------------------------------------------------------------------
--- Two things must be confirmed before loading 61.5M rows:
+-- Two things were confirmed before loading 61.5M rows:
 --
---   (a) HEADER: does each file start with a header row?
---       Phase 0 assumed yes (SKIP_HEADER = 1). The Snowflake lab that
---       publishes this bucket loads it with SKIP_HEADER = 0. If the files have
---       NO header and we skip line 1, we silently lose one real ride per file.
+--   (a) HEADER: the files have NO header row. Row 1 of each file is a real
+--       ride ($1 is a number, not the text 'tripduration'). Phase 0 had used
+--       SKIP_HEADER = 1, which silently dropped the first ride of every file.
 --
---   (b) COLUMN COUNT: 15 or 16 columns?
---       The lab's table has 16 (it includes MEMBERSHIP_TYPE between BIKEID and
---       USERTYPE). Phase 0 only inspected columns 1-8.
---
--- HOW TO READ THE RESULT:
---   * Rows where $1 = 'tripduration' (text)  -> files HAVE a header.
---       Change FF_TRIPS_CSV to SKIP_HEADER = 1 and re-run STEP 1's first
---       CREATE statement.
---   * $1 is a number on row 1                -> NO header. Keep SKIP_HEADER = 0.
---   * $16 has values (e.g. 1 / 2 for gender) -> 16 columns. STEP 3 is correct.
---   * $16 is always NULL, $15 has values     -> 15 columns. STOP and adjust
---       STEP 3 (remove MEMBERSHIP_TYPE) before loading.
+--   (b) COLUMN COUNT: 16 columns. $16 holds gender codes, so the layout
+--       includes MEMBERSHIP_TYPE between BIKEID and USERTYPE.
 -- ----------------------------------------------------------------------------
 
 SELECT
@@ -100,7 +83,7 @@ SELECT
 FROM @CITIBIKE_LAB_STAGE (FILE_FORMAT => 'FF_TRIPS_CSV')
 LIMIT 10;
 
--- How many files are there? (Needed for the reconciliation in STEP 8.)
+-- Number of trip files (used in the STEP 8 reconciliation).
 LIST @CITIBIKE_LAB_STAGE;
 SELECT COUNT(*) AS n_trip_files FROM TABLE(RESULT_SCAN(LAST_QUERY_ID()));
 
@@ -117,8 +100,8 @@ SELECT COUNT(*) AS n_trip_files FROM TABLE(RESULT_SCAN(LAST_QUERY_ID()));
 --   _source_row    which line of that file
 --   _loaded_at     when it was loaded
 --
--- The old trip schema has no ride_id. (_source_file, _source_row) is
--- therefore the natural key of a raw trip row.
+-- The old trip schema has no ride_id, so (_source_file, _source_row) is the
+-- natural key of a raw trip row.
 -- ----------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS RAW_CITIBIKE_LAB (
@@ -161,18 +144,17 @@ COMMENT = 'Open-Meteo historical archive (ERA5 model), hourly, UTC. One row per 
 
 
 -- ----------------------------------------------------------------------------
--- STEP 4: (OPTIONAL) SIZE UP FOR THE ONE-OFF TRIP LOAD
+-- STEP 4: SIZE UP FOR THE ONE-OFF TRIP LOAD
 -- ----------------------------------------------------------------------------
--- A SMALL warehouse costs 2x per second but loads files in parallel ~2x
--- faster, so total credits are about the same and you wait half as long.
--- Skip this if you prefer to stay on XSMALL.
+-- A SMALL warehouse costs 2x per second but loads files in parallel about 2x
+-- faster, so total credits are about the same and the load finishes sooner.
 -- ----------------------------------------------------------------------------
 
 ALTER WAREHOUSE CITIBIKE_WH SET WAREHOUSE_SIZE = 'SMALL';
 
 
 -- ----------------------------------------------------------------------------
--- STEP 5: LOAD HISTORICAL TRIPS  (expect 10-30 minutes)
+-- STEP 5: LOAD HISTORICAL TRIPS
 -- ----------------------------------------------------------------------------
 -- Loads ALL years (2013-2018), not just the 2016-2018 overlap.
 -- Filtering to the overlap window is a transformation, so it belongs in dbt.
@@ -206,7 +188,7 @@ ALTER WAREHOUSE CITIBIKE_WH SET WAREHOUSE_SIZE = 'XSMALL';
 
 
 -- ----------------------------------------------------------------------------
--- STEP 6: LOAD THE OFFICIAL WEATHER JSON  (expect < 1 minute)
+-- STEP 6: LOAD THE OFFICIAL WEATHER JSON
 -- ----------------------------------------------------------------------------
 -- Loaded whole into a VARIANT column. The upstate city (5128638) and the
 -- exact-copy duplicates are deliberately kept here - dbt removes them, and
@@ -231,35 +213,28 @@ ON_ERROR = 'ABORT_STATEMENT';
 -- Why this source exists: the official feed has no numerical rainfall and
 -- covers only 72.4% of hours (Phase 0). Open-Meteo provides every hour.
 --
--- 7a. DOWNLOAD - paste this URL into a browser and save the result as
---     openmeteo_nyc_2016-07-04_2018-07-01.json
+-- Source file openmeteo_nyc_2016-07-04_2018-07-01.json was downloaded from:
 --
 --   https://archive-api.open-meteo.com/v1/archive?latitude=40.714272&longitude=-74.005966&start_date=2016-07-04&end_date=2018-07-01&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,wind_speed_10m,weather_code&models=era5&timezone=GMT
 --
---   Choices baked into that URL (each one is deliberate):
---     latitude/longitude  = the exact coordinates of official city 5128581,
---                           so both sources describe the same place
---     start/end dates     = one day either side of the NYC-local overlap
---                           window, because UTC runs 4-5 hours ahead
---     models=era5         = pinned model, so the download is reproducible
---     timezone=GMT        = times in UTC. Both weather sources then go through
---                           the SAME UTC -> America/New_York conversion in dbt
+-- Choices in that URL:
+--   latitude/longitude  = the exact coordinates of official city 5128581,
+--                         so both sources describe the same place
+--   start/end dates     = one day either side of the NYC-local overlap
+--                         window, because UTC runs 4-5 hours ahead
+--   models=era5         = pinned model, so the download is reproducible
+--   timezone=GMT        = times in UTC; both weather sources then go through
+--                         the same UTC -> America/New_York conversion in dbt
 --
---   If the API rejects a variable name, remove that one variable and retry.
---
--- 7b. UPLOAD - in Snowsight, open CITIBIKE_WEATHER > RAW > Stages >
---     OPENMETEO_STAGE and use "+ Files" to upload the saved .json file.
---     (Run the CREATE STAGE line below first so the stage exists.)
+-- The file was uploaded to the internal stage below through Snowsight.
 -- ----------------------------------------------------------------------------
 
 CREATE STAGE IF NOT EXISTS OPENMETEO_STAGE
     FILE_FORMAT = (FORMAT_NAME = 'FF_OPENMETEO_JSON')
     COMMENT = 'Internal stage for manually downloaded Open-Meteo archive files.';
 
--- After uploading, confirm the file is there:
 LIST @OPENMETEO_STAGE;
 
--- 7c. LOAD
 COPY INTO RAW_WEATHER_OPENMETEO (v, _source_file)
 FROM (
     SELECT
@@ -272,37 +247,34 @@ ON_ERROR = 'ABORT_STATEMENT';
 
 
 -- ----------------------------------------------------------------------------
--- STEP 8: RECONCILIATION - Phase 1 is done when these all match
+-- STEP 8: RECONCILIATION
 -- ----------------------------------------------------------------------------
--- Expected values come from Phase 0.
+-- Raw row counts compared with Phase 0. Expected values are noted per column.
 --
--- NOTE on the trip numbers: Phase 0 counted with SKIP_HEADER = 1.
---   * If STEP 2 showed the files HAVE a header -> raw counts should equal
---     Phase 0 exactly.
---   * If STEP 2 showed NO header -> raw counts should be HIGHER than Phase 0
---     by exactly the number of files (Phase 0 dropped the first ride of each
---     file). That would be a Phase 0 correction worth writing down.
+-- Trips: Phase 0 counted with SKIP_HEADER = 1, which skipped the first ride
+-- of every file. The raw table is therefore higher than Phase 0 by exactly
+-- one row per file (61,468,359 vs 61,467,983).
 -- ----------------------------------------------------------------------------
 
 -- 8a. Trips
 SELECT
-    COUNT(*)                                       AS raw_rows,                -- expect 61,467,983 (see note)
-    COUNT(DISTINCT _source_file)                   AS files_loaded,            -- expect = n_trip_files from STEP 2
+    COUNT(*)                                       AS raw_rows,                -- 61,468,359
+    COUNT(DISTINCT _source_file)                   AS files_loaded,            -- = n_trip_files from STEP 2
     COUNT_IF(TRY_TO_TIMESTAMP(starttime) >= '2016-07-05'
          AND TRY_TO_TIMESTAMP(starttime) <  '2018-07-01')
-                                                   AS overlap_rows,            -- expect 32,012,387 (see note)
-    COUNT_IF(TRY_TO_TIMESTAMP(starttime) IS NULL)  AS unparseable_starttime,   -- expect 0
-    MIN(TRY_TO_TIMESTAMP(starttime))               AS earliest,                -- expect 2013-06-01 00:00:08
-    MAX(TRY_TO_TIMESTAMP(starttime))               AS latest,                  -- expect 2018-06-30 23:59:54
+                                                   AS overlap_rows,            -- 32,012,552
+    COUNT_IF(TRY_TO_TIMESTAMP(starttime) IS NULL)  AS unparseable_starttime,   -- 0
+    MIN(TRY_TO_TIMESTAMP(starttime))               AS earliest,                -- 2013-06-01 00:00:08
+    MAX(TRY_TO_TIMESTAMP(starttime))               AS latest,                  -- 2018-06-30 23:59:54
     COUNT_IF(gender IS NULL)                       AS null_gender              -- near 0 if the 16-column layout is right
 FROM RAW_CITIBIKE_LAB;
 
 -- 8b. Official weather
 SELECT
-    COUNT(*)                                       AS raw_rows,                -- expect 57,894
-    COUNT(DISTINCT v:time::INT)                    AS unique_timestamps,       -- expect 40,327
-    COUNT_IF(v:city.id::INT = 5128581)             AS nyc_rows,                -- expect 28,962
-    COUNT_IF(v:city.id::INT = 5128638)             AS upstate_rows             -- expect 28,932
+    COUNT(*)                                       AS raw_rows,                -- 57,894
+    COUNT(DISTINCT v:time::INT)                    AS unique_timestamps,       -- 40,327
+    COUNT_IF(v:city.id::INT = 5128581)             AS nyc_rows,                -- 28,962
+    COUNT_IF(v:city.id::INT = 5128638)             AS upstate_rows             -- 28,932
 FROM RAW_WEATHER_JSON;
 
 -- 8c. Open-Meteo
@@ -310,29 +282,15 @@ SELECT
     _source_file,
     v:latitude::FLOAT                              AS grid_lat,               -- snapped to the model grid, near 40.7
     v:longitude::FLOAT                             AS grid_lon,               -- near -74.0
-    v:timezone::STRING                             AS tz,                     -- expect GMT
-    ARRAY_SIZE(v:hourly.time)                      AS hours,                  -- expect 17,472 (728 days x 24)
-    v:hourly.time[0]::STRING                       AS first_hour_utc,         -- expect 2016-07-04T00:00
-    v:hourly_units                                 AS units                   -- precipitation should be mm
+    v:timezone::STRING                             AS tz,                     -- GMT
+    ARRAY_SIZE(v:hourly.time)                      AS hours,                  -- 17,472 (728 days x 24)
+    v:hourly.time[0]::STRING                       AS first_hour_utc,         -- 2016-07-04T00:00
+    v:hourly_units                                 AS units                   -- precipitation in mm
 FROM RAW_WEATHER_OPENMETEO;
 
 -- 8d. Open-Meteo has no missing rainfall values
 SELECT
     COUNT(*)                                       AS hours,
-    COUNT_IF(p.value IS NULL OR IS_NULL_VALUE(p.value)) AS missing_precip     -- expect 0
+    COUNT_IF(p.value IS NULL OR IS_NULL_VALUE(p.value)) AS missing_precip     -- 0
 FROM RAW_WEATHER_OPENMETEO,
      LATERAL FLATTEN(input => v:hourly.precipitation) p;
-
-
--- ============================================================================
--- PHASE 1 COMPLETE when:
---   [ ] STEP 2 header + column-count decision recorded
---   [ ] 8a trip rows reconcile with Phase 0 (allowing for the header note)
---   [ ] 8b weather rows = 57,894 with both city IDs present
---   [ ] 8c Open-Meteo = 17,472 hours, timezone GMT
---   [ ] 8d zero missing precipitation values
---   [ ] Warehouse back on XSMALL
---   [ ] This file committed to Git
---
--- Next: Phase 2 - dbt sources, staging models and contracts.
--- ============================================================================

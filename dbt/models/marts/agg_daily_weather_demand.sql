@@ -2,7 +2,7 @@
 -- One row per New York calendar date (726 rows). Answers the brief's literal question:
 -- "How does a rainy or snowy day affect user behaviour compared to a clear, sunny day?"
 --
--- Day types (thresholds in dbt_project.yml, decided by Saisha 6 Oct):
+-- Day types (thresholds in dbt_project.yml):
 --   Snowy  = snowfall >= snowy_day_min_cm  (snow beats rain)
 --   Rainy  = rain     >= rainy_day_min_mm
 --   Dry    = no measurable precipitation at all (0.0 mm) - stands in for "clear, sunny"

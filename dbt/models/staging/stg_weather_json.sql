@@ -40,8 +40,8 @@ flattened as (
         v:main.humidity::float                              as humidity_pct,
         v:main.pressure::float                              as pressure_hpa,
 
-        -- Unit not yet verified (very likely m/s). Named _raw until checked
-        -- against Open-Meteo's km/h values.
+        -- Unit not confirmed (likely m/s), so named _raw. Not used downstream:
+        -- wind speed in the marts comes from Open-Meteo (km/h).
         v:wind.speed::float                                 as wind_speed_raw,
         v:wind.deg::float                                   as wind_direction_deg,
         v:clouds.all::float                                 as cloud_cover_pct,

@@ -2,7 +2,7 @@
 -- One row per UTC hour (17,424): what actually happened, what NORMALLY happens in that hour,
 -- and the gap between them. The gap is what we later line up against the weather.
 --
--- "Normal" (expected) demand = LEVEL x SHAPE        (idea from the friend's review, 5 Oct)
+-- "Normal" (expected) demand = LEVEL x SHAPE
 --
 --   LEVEL = how busy this kind of day normally is around this date, WITHOUT rain:
 --           the MEDIAN daily total of the same weekday from 4 weeks before to 4 weeks after
@@ -10,8 +10,8 @@
 --           using only comparable Dry or Light (drizzle) days, and never the day itself.
 --           * Same weekday, so Tuesdays are compared with Tuesdays.
 --           * Centred window, so it follows the seasons and Citi Bike's growth WITHOUT lagging
---             behind (decision B, Saisha 6 Oct; the first version used the previous 8 weeks and
---             sat ~6% too low on dry days).
+--             behind (decision B; an earlier version used the previous 8 weeks and sat ~6% too
+--             low on dry days).
 --           * Rain-free days only, so "normal" means "normal without rain".
 --           * Uses future weeks: right for EXPLAINING the past, not for FORECASTING. A forecast
 --             (Phase 5) must use past days only.

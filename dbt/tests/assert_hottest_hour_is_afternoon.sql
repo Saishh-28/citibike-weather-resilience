@@ -1,4 +1,4 @@
--- Timezone guard (plan §10, Phase 0 check 3).
+-- Timezone guard (from the Phase 0 timezone check).
 -- After converting to New York time, the hottest average hour of the day must
 -- fall between 12:00 and 17:00. If the UTC conversion is ever broken or removed,
 -- the peak jumps to ~19:00-20:00 and this test fails instead of the dashboard

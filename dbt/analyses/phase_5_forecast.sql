@@ -1,16 +1,16 @@
 -- phase_5_forecast.sql  (run in a Snowflake WORKSHEET, not in dbt — dbt does not run analyses)
 -- Phase 5 stretch: does knowing the weather make a daily trip forecast better?
 --
--- Design (decided 10 Oct):
+-- Design:
 --   * Daily grain: one number per day (agg_daily_weather_demand, 726 days).
 --   * Time-based split, PAST DATA ONLY for training:
 --       train = 2016-07-05 .. 2018-04-30 (665 days)   test = 2018-05-01 .. 2018-06-30 (61 days)
---   * FIRST ATTEMPT (10 Oct) trained to 2017-12-31 and forecast all of 2018 H1 (181 days): both models
+--   * FIRST ATTEMPT trained to 2017-12-31 and forecast all of 2018 H1 (181 days): both models
 --     failed (calendar MAPE 57.7%, weather 78.2%; calendar predicted a flat ~25k/day while June was 65k).
 --     Cause: 18 months of history = one winter-to-summer cycle, so seasonality was never learned, and a
 --     6-month horizon is unrealistic. Fixed by training to end of April 2018 (May-June 2017 seen once).
---   * RESULT (10 Oct): 61 test days. MAE calendar 15,253 vs weather 9,134; MAPE 26.8% vs 16.2%;
---     weather cut the average error by 40.1%. Saisha predicted 10-30%.
+--   * RESULT: 61 test days. MAE calendar 15,253 vs weather 9,134; MAPE 26.8% vs 16.2%;
+--     weather cut the average error by 40.1%.
 --     (Unlike the explanatory baseline, nothing here looks at future weeks.)
 --   * Two models, identical except for weather:
 --       A  "calendar"  : date + is_holiday + is_weekend
@@ -20,10 +20,9 @@
 --     In real use you would feed in the weather FORECAST, so B's gain is a best case.
 --   * Scored on test days with no closure hours (riders could not ride on those days).
 --   * Separate schema ML_SANDBOX: experiments stay out of the dbt schemas.
---   * Stop rule: if Step 0 fails, or this is not working within ~2 hours, present it as "next".
 
 -- =========================================================================
--- STEP 0 — Is the forecasting function available on this account? (1 minute)
+-- STEP 0 — Is the forecasting function available on this account?
 -- =========================================================================
 use database CITIBIKE_WEATHER;
 use warehouse CITIBIKE_WH;
@@ -32,7 +31,7 @@ use schema ML_SANDBOX;
 
 show snowflake.ml.forecast;
 -- Expected: "Query produced no results" (= function exists, no models yet).
--- An error like "does not exist or not authorized" = not available -> stop rule.
+-- An error like "does not exist or not authorized" = not available on this account.
 
 -- =========================================================================
 -- STEP 1 — Training and test tables
@@ -73,7 +72,7 @@ select ds, is_holiday, is_weekend, precipitation_mm, snowfall_cm, avg_temperatur
 from daily_input where ds >= '2018-05-01';
 
 -- =========================================================================
--- STEP 2 — Train the two models (each takes about a minute)
+-- STEP 2 — Train the two models
 -- =========================================================================
 create or replace snowflake.ml.forecast model_calendar(
     input_data        => table(train_calendar),
@@ -88,7 +87,7 @@ create or replace snowflake.ml.forecast model_weather(
 );
 
 -- =========================================================================
--- STEP 3 — Forecast the first half of 2018 with each model
+-- STEP 3 — Forecast the test period (May-June 2018) with each model
 -- =========================================================================
 call model_calendar!forecast(
     input_data        => table(test_calendar),
